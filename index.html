@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>River Texture Editor</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>River Texture Editor</h1>
+        <div class="file-controls">
+          <input type="file" id="fileInput" accept=".bmp,image/bmp" />
+          <button id="saveBtn" disabled>Save BMP</button>
+          <input
+            type="file"
+            id="refInput"
+            accept="image/*"
+            title="Load reference image"
+          />
+          <input
+            type="range"
+            id="refOpacity"
+            min="0"
+            max="100"
+            value="50"
+            title="Reference opacity"
+          />
+        </div>
+      </header>
+
+      <div class="main-content">
+        <aside class="toolbar">
+          <h3>Tools</h3>
+          <div class="tool-group">
+            <button class="tool-btn active" data-tool="river">
+              <span class="color-indicator river"></span>
+              River (B:255)
+            </button>
+            <button class="tool-btn" data-tool="source">
+              <span class="color-indicator source"></span>
+              Source (G:255)
+            </button>
+            <button class="tool-btn" data-tool="junction">
+              <span class="color-indicator junction"></span>
+              Junction (R:255)
+            </button>
+            <button class="tool-btn" data-tool="eraser">
+              <span class="color-indicator eraser"></span>
+              Eraser
+            </button>
+          </div>
+
+          <h3>View</h3>
+          <div class="view-controls">
+            <button id="zoomIn">Zoom In</button>
+            <button id="zoomOut">Zoom Out</button>
+            <button id="resetView">Reset View</button>
+            <div class="zoom-display">
+              Zoom: <span id="zoomLevel">100%</span>
+            </div>
+          </div>
+
+          <h3>Actions</h3>
+          <div class="action-controls">
+            <button id="undoBtn" disabled>Undo</button>
+            <button id="redoBtn" disabled>Redo</button>
+            <button id="clearBtn">Clear All</button>
+          </div>
+
+          <h3>Info</h3>
+          <div class="info-panel">
+            <p>Position: <span id="mousePos">-</span></p>
+            <p>Image: <span id="imageSize">No image</span></p>
+          </div>
+        </aside>
+
+        <div class="canvas-container">
+          <img id="referenceImage" class="reference-image" />
+          <canvas id="canvas"></canvas>
+          <div class="loading" id="loading">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <script src="river-editor.js"></script>
+  </body>
+</html>
