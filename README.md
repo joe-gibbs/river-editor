@@ -1,5 +1,7 @@
 # River Texture Editor
 
+![River Texture Editor](./screenshot.png)
+
 A specialized image editor for creating and editing cardinally-connected river textures for game development. This editor works with BMP files where:
 
 - **Blue (0,0,255)** = River segments
