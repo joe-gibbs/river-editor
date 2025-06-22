@@ -12,6 +12,7 @@
         <h1>River Texture Editor</h1>
         <div class="file-controls">
           <input type="file" id="fileInput" accept=".bmp,image/bmp" />
+          <button id="newCanvasBtn">New Canvas</button>
           <button id="saveBtn" disabled>Save BMP</button>
           <input
             type="file"
@@ -36,7 +37,7 @@
           <div class="tool-group">
             <button class="tool-btn active" data-tool="river">
               <span class="color-indicator river"></span>
-              River (B:255)
+              River (B:100-255)
             </button>
             <button class="tool-btn" data-tool="source">
               <span class="color-indicator source"></span>
@@ -52,6 +53,14 @@
             </button>
           </div>
 
+          <h3>Drawing Mode</h3>
+          <div class="tool-group">
+            <button id="automaticMode" class="tool-btn mode-toggle">
+              <span class="mode-indicator">✓</span>
+              Automatic Mode
+            </button>
+          </div>
+
           <h3>View</h3>
           <div class="view-controls">
             <button id="zoomIn">Zoom In</button>
@@ -62,11 +71,23 @@
             </div>
           </div>
 
+          <h3>Reference</h3>
+          <div class="reference-controls">
+            <button id="toggleReference" disabled>Toggle Reference</button>
+            <button id="clearReference" disabled>Clear Reference</button>
+          </div>
+
           <h3>Actions</h3>
           <div class="action-controls">
             <button id="undoBtn" disabled>Undo</button>
             <button id="redoBtn" disabled>Redo</button>
             <button id="clearBtn">Clear All</button>
+            <button
+              id="calculateWidthBtn"
+              title="Automatically set river widths based on flow accumulation and length"
+            >
+              Calculate River Widths
+            </button>
           </div>
 
           <h3>Info</h3>
@@ -77,7 +98,7 @@
         </aside>
 
         <div class="canvas-container">
-          <img id="referenceImage" class="reference-image" />
+          <canvas id="referenceCanvas" class="reference-canvas"></canvas>
           <canvas id="canvas"></canvas>
           <div class="loading" id="loading">Loading...</div>
         </div>

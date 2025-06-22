@@ -1,6 +1,7 @@
 # River Texture Editor
 
-A specialized image editor for creating and editing river textures for game development. This editor works with BMP files where:
+A specialized image editor for creating and editing cardinally-connected river textures for game development. This editor works with BMP files where:
+
 - **Blue (0,0,255)** = River segments
 - **Green (0,255,0)** = River sources
 - **Red (255,0,0)** = River junctions/meeting points
@@ -36,7 +37,7 @@ A specialized image editor for creating and editing river textures for game deve
 ## Usage
 
 1. **Open the Editor**
-   - Simply open `index.html` in your web browser (Chrome, Firefox, Edge recommended)
+   - Open `index.html` in your web browser (Chrome, Firefox, Edge recommended)
    - No server required - runs completely locally
 
 2. **Load Your Texture**
@@ -52,25 +53,3 @@ A specialized image editor for creating and editing river textures for game deve
 4. **Save Your Work**
    - Click "Save BMP" to download the edited texture
    - The file will be saved as `river_texture.bmp`
-
-## Technical Notes
-
-- The editor preserves exact RGB values (no anti-aliasing or color blending)
-- Rivers must be cardinally connected (no diagonal connections) for proper game functionality
-- The editor uses HTML5 Canvas with pixelated rendering for precise pixel editing
-- Large images (4081x4081) are handled efficiently with optimized rendering
-
-## Browser Compatibility
-
-Works best in modern browsers:
-- Chrome 90+
-- Firefox 88+
-- Edge 90+
-- Safari 14+
-
-## Tips
-
-- Use smaller brush sizes (1-3 pixels) for precise river connections
-- Zoom in to ensure cardinal connections between river segments
-- The checkered background helps distinguish black areas from transparency
-- Save frequently as browser refresh will lose unsaved changes 

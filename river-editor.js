@@ -14,6 +14,7 @@ class RiverEditor {
     this.isPanning = false;
     this.lastPanX = 0;
     this.lastPanY = 0;
+    this.automaticMode = true; // Automatic mode on by default
 
     // Drawing state for cardinal connections
     this.lastDrawX = null;
@@ -35,9 +36,11 @@ class RiverEditor {
       eraser: { r: 0, g: 0, b: 0 },
     };
 
-    // Reference image element
-    this.referenceImageElement = document.getElementById("referenceImage");
-    this.referenceImageElement.style.opacity = 0.5;
+    // Reference canvas for better performance with large images
+    this.referenceCanvas = document.getElementById("referenceCanvas");
+    this.referenceCtx = this.referenceCanvas.getContext("2d");
+    this.referenceCanvas.style.opacity = 0.5;
+    this.hasReference = false;
 
     this.initializeEventListeners();
     this.updateCanvasSize();
@@ -52,6 +55,11 @@ class RiverEditor {
       .getElementById("saveBtn")
       .addEventListener("click", () => this.saveBMP());
 
+    // New canvas button
+    document
+      .getElementById("newCanvasBtn")
+      .addEventListener("click", () => this.createNewCanvas());
+
     // Reference image input
     document
       .getElementById("refInput")
@@ -59,18 +67,37 @@ class RiverEditor {
 
     // Reference image opacity slider
     document.getElementById("refOpacity").addEventListener("input", (e) => {
-      this.referenceImageElement.style.opacity = e.target.value / 100;
+      this.referenceCanvas.style.opacity = e.target.value / 100;
     });
+
+    // Reference toggle and clear buttons
+    document
+      .getElementById("toggleReference")
+      .addEventListener("click", () => this.toggleReference());
+    document
+      .getElementById("clearReference")
+      .addEventListener("click", () => this.clearReference());
 
     // Tool selection
     document.querySelectorAll(".tool-btn").forEach((btn) => {
       btn.addEventListener("click", (e) => {
+        // Skip mode toggle buttons
+        if (btn.classList.contains("mode-toggle")) return;
+
         document
-          .querySelectorAll(".tool-btn")
+          .querySelectorAll(".tool-btn:not(.mode-toggle)")
           .forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
         this.currentTool = btn.dataset.tool;
       });
+    });
+
+    // Automatic mode toggle
+    const automaticBtn = document.getElementById("automaticMode");
+    automaticBtn.classList.add("active"); // Start as active since default is true
+    automaticBtn.addEventListener("click", () => {
+      this.automaticMode = !this.automaticMode;
+      automaticBtn.classList.toggle("active");
     });
 
     // View controls
@@ -94,6 +121,9 @@ class RiverEditor {
     document
       .getElementById("clearBtn")
       .addEventListener("click", () => this.clearCanvas());
+    document
+      .getElementById("calculateWidthBtn")
+      .addEventListener("click", () => this.calculateRiverWidths());
 
     // Canvas events
     this.canvas.addEventListener("mousedown", (e) => this.startDrawing(e));
@@ -161,35 +191,83 @@ class RiverEditor {
     reader.readAsDataURL(file);
   }
 
+  createNewCanvas() {
+    const size = prompt("Enter canvas size (e.g., '512' for 512x512):", "512");
+    if (!size) return;
+
+    const dimension = parseInt(size);
+    if (isNaN(dimension) || dimension < 1 || dimension > 8192) {
+      alert("Please enter a valid size between 1 and 8192");
+      return;
+    }
+
+    // Set canvas dimensions
+    this.canvas.width = dimension;
+    this.canvas.height = dimension;
+
+    // Create black image data
+    this.imageData = this.ctx.createImageData(dimension, dimension);
+    for (let i = 0; i < this.imageData.data.length; i += 4) {
+      this.imageData.data[i] = 0; // R
+      this.imageData.data[i + 1] = 0; // G
+      this.imageData.data[i + 2] = 0; // B
+      this.imageData.data[i + 3] = 255; // A
+    }
+
+    // Put the image data on canvas
+    this.ctx.putImageData(this.imageData, 0, 0);
+
+    // Initialize history
+    this.history = [this.ctx.getImageData(0, 0, dimension, dimension)];
+    this.historyStep = 0;
+
+    // Update UI
+    document.getElementById("saveBtn").disabled = false;
+    document.getElementById(
+      "imageSize"
+    ).textContent = `${dimension}x${dimension}`;
+    this.updateHistoryButtons();
+
+    this.resetView();
+    this.render();
+  }
+
   /**
-   * Load an external reference image (PNG/JPG/etc) and overlay it above the canvas
+   * Load an external reference image (PNG/JPG/etc) and render it to a canvas overlay
    */
   loadReferenceImage(event) {
     const file = event.target.files[0];
     if (!file) return;
 
+    // Show loading indicator
+    document.getElementById("loading").classList.add("active");
+
     const reader = new FileReader();
     reader.onload = (e) => {
-      // Set source for overlay <img>
-      this.referenceImageElement.src = e.target.result;
+      const img = new Image();
+      img.onload = () => {
+        // Set canvas dimensions to match the reference image
+        this.referenceCanvas.width = img.width;
+        this.referenceCanvas.height = img.height;
 
-      // Once the image data is available, ensure it matches the canvas size
-      this.referenceImageElement.onload = () => {
-        // If a canvas image is already loaded, match its dimensions for pixel-perfect tracing
-        if (this.canvas.width && this.canvas.height) {
-          this.referenceImageElement.width = this.canvas.width;
-          this.referenceImageElement.height = this.canvas.height;
-        } else {
-          // Fallback to the natural size of the reference image
-          this.referenceImageElement.width =
-            this.referenceImageElement.naturalWidth;
-          this.referenceImageElement.height =
-            this.referenceImageElement.naturalHeight;
-        }
+        // Draw the image once to the reference canvas
+        this.referenceCtx.drawImage(img, 0, 0);
 
-        // Ensure the transform is in sync
+        // Show the reference canvas
+        this.referenceCanvas.style.display = "block";
+        this.hasReference = true;
+
+        // Hide loading indicator
+        document.getElementById("loading").classList.remove("active");
+
+        // Enable reference control buttons
+        document.getElementById("toggleReference").disabled = false;
+        document.getElementById("clearReference").disabled = false;
+
+        // Update transforms
         this.render();
       };
+      img.src = e.target.result;
     };
     reader.readAsDataURL(file);
   }
@@ -214,7 +292,8 @@ class RiverEditor {
     const view = new DataView(buffer);
 
     // File header
-    view.setUint16(0, 0x4d42, false); // 'BM'
+    view.setUint8(0, 0x42); // 'B'
+    view.setUint8(1, 0x4d); // 'M'
     view.setUint32(2, fileSize, true);
     view.setUint32(6, 0, true);
     view.setUint32(10, fileHeaderSize + infoHeaderSize, true);
@@ -323,6 +402,9 @@ class RiverEditor {
             currentY + 1
           );
         }
+        // Update canvas for single pixel
+        this.ctx.putImageData(this.imageData, 0, 0);
+        this.render();
       }
 
       this.lastDrawX = currentX;
@@ -340,6 +422,13 @@ class RiverEditor {
       ) {
         this.checkForJunction(this.lastDrawX, this.lastDrawY);
       }
+      // Update imageData to reflect the current canvas state before saving to history
+      this.imageData = this.ctx.getImageData(
+        0,
+        0,
+        this.canvas.width,
+        this.canvas.height
+      );
       this.saveToHistory();
     }
     this.isDrawing = false;
@@ -372,10 +461,6 @@ class RiverEditor {
         this.drawnPixels.add(`${centerX},${centerY}`);
       }
     }
-
-    // Don't update network here anymore - it's handled in drawCardinalLine
-    this.ctx.putImageData(this.imageData, 0, 0);
-    this.render();
   }
 
   drawCardinalLine(x1, y1, x2, y2) {
@@ -388,6 +473,9 @@ class RiverEditor {
     if (dx === 0 && dy === 0) {
       // Same point
       this.drawPixel(x1, y1);
+      // Update canvas for single pixel
+      this.ctx.putImageData(this.imageData, 0, 0);
+      this.render();
       return;
     }
 
@@ -411,6 +499,10 @@ class RiverEditor {
       const maxY = Math.max(y1, y2) + 1;
       this.updateRiverNetworkInArea(minX, minY, maxX, maxY);
     }
+
+    // Update canvas after all pixels are drawn
+    this.ctx.putImageData(this.imageData, 0, 0);
+    this.render();
   }
 
   drawHorizontalLine(x1, y, x2, y2) {
@@ -430,6 +522,11 @@ class RiverEditor {
   }
 
   checkForJunction(x, y) {
+    // Only check for junctions if automatic mode is enabled
+    if (!this.automaticMode) {
+      return;
+    }
+
     // Check if this pixel connects to any existing river pixels that weren't drawn in this stroke
     const hasExistingNeighbor =
       (this.isRiverPixel(x - 1, y) && !this.drawnPixels.has(`${x - 1},${y}`)) ||
@@ -445,6 +542,13 @@ class RiverEditor {
       this.imageData.data[index + 2] = 0;
       this.imageData.data[index + 3] = 255;
       this.ctx.putImageData(this.imageData, 0, 0);
+      // Re-read imageData after junction update
+      this.imageData = this.ctx.getImageData(
+        0,
+        0,
+        this.canvas.width,
+        this.canvas.height
+      );
     }
   }
 
@@ -540,6 +644,8 @@ class RiverEditor {
     }
 
     this.ctx.putImageData(this.imageData, 0, 0);
+    // Update imageData to reflect the cleared state
+    this.imageData = this.ctx.getImageData(0, 0, width, height);
     this.saveToHistory();
     this.render();
   }
@@ -568,7 +674,12 @@ class RiverEditor {
       this.historyStep--;
       const state = this.history[this.historyStep];
       this.ctx.putImageData(state, 0, 0);
-      this.imageData = state;
+      this.imageData = this.ctx.getImageData(
+        0,
+        0,
+        this.canvas.width,
+        this.canvas.height
+      );
       this.updateHistoryButtons();
       this.render();
     }
@@ -579,7 +690,12 @@ class RiverEditor {
       this.historyStep++;
       const state = this.history[this.historyStep];
       this.ctx.putImageData(state, 0, 0);
-      this.imageData = state;
+      this.imageData = this.ctx.getImageData(
+        0,
+        0,
+        this.canvas.width,
+        this.canvas.height
+      );
       this.updateHistoryButtons();
       this.render();
     }
@@ -611,10 +727,10 @@ class RiverEditor {
       this.canvas.style.transformOrigin = "0 0";
     }
 
-    // Apply the same transform to the reference overlay if it has a source
-    if (this.referenceImageElement && this.referenceImageElement.src) {
-      this.referenceImageElement.style.transform = transformStr;
-      this.referenceImageElement.style.transformOrigin = "0 0";
+    // Apply the same transform to the reference canvas if loaded
+    if (this.hasReference) {
+      this.referenceCanvas.style.transform = transformStr;
+      this.referenceCanvas.style.transformOrigin = "0 0";
     }
   }
 
@@ -642,6 +758,11 @@ class RiverEditor {
   }
 
   updateRiverNetwork() {
+    // Only apply automatic network updates if automatic mode is enabled
+    if (!this.automaticMode) {
+      return;
+    }
+
     // Update the entire network - useful after loading an image or clearing
     const width = this.canvas.width;
     const height = this.canvas.height;
@@ -685,6 +806,11 @@ class RiverEditor {
     maxX = Math.min(this.canvas.width - 1, maxX);
     maxY = Math.min(this.canvas.height - 1, maxY);
 
+    // Only apply automatic network updates if automatic mode is enabled
+    if (!this.automaticMode) {
+      return;
+    }
+
     // Analyze each river pixel in the area and update its type based on connections
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
@@ -713,7 +839,344 @@ class RiverEditor {
       }
     }
 
+    // Don't put image data here - it's handled by the caller
+  }
+
+  toggleReference() {
+    if (!this.hasReference) return;
+
+    // Toggle visibility
+    const isVisible = this.referenceCanvas.style.display !== "none";
+    this.referenceCanvas.style.display = isVisible ? "none" : "block";
+
+    // Update button text
+    const btn = document.getElementById("toggleReference");
+    btn.textContent = isVisible ? "Show Reference" : "Hide Reference";
+  }
+
+  clearReference() {
+    if (!this.hasReference) return;
+
+    if (confirm("Clear the reference image?")) {
+      // Clear the canvas
+      this.referenceCtx.clearRect(
+        0,
+        0,
+        this.referenceCanvas.width,
+        this.referenceCanvas.height
+      );
+
+      // Hide and reset
+      this.referenceCanvas.style.display = "none";
+      this.hasReference = false;
+
+      // Reset file input
+      document.getElementById("refInput").value = "";
+
+      // Disable control buttons
+      document.getElementById("toggleReference").disabled = true;
+      document.getElementById("clearReference").disabled = true;
+      document.getElementById("toggleReference").textContent =
+        "Toggle Reference";
+    }
+  }
+
+  calculateRiverWidths() {
+    if (!this.imageData) {
+      alert("Please load or create an image first");
+      return;
+    }
+
+    // Build river network graph
+    const network = this.buildRiverNetwork();
+
+    // Calculate flow accumulation for each pixel
+    const flowAccumulation = this.calculateFlowAccumulation(network);
+
+    // Calculate river lengths
+    const riverLengths = this.calculateRiverLengths(network);
+
+    // Apply widths based on flow and length
+    this.applyRiverWidths(flowAccumulation, riverLengths);
+
+    // Save to history
+    this.saveToHistory();
+  }
+
+  buildRiverNetwork() {
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+    const network = new Map(); // key: "x,y", value: {x, y, upstream: [], downstream: [], isJunction: boolean, isSource: boolean}
+
+    // First pass: identify all river pixels and their types
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (this.isRiverPixel(x, y)) {
+          const index = (y * width + x) * 4;
+          const key = `${x},${y}`;
+          network.set(key, {
+            x,
+            y,
+            upstream: [],
+            downstream: [],
+            isJunction: this.imageData.data[index] === 255, // Red channel
+            isSource: this.imageData.data[index + 1] === 255, // Green channel
+          });
+        }
+      }
+    }
+
+    // Second pass: build connections
+    for (const [key, node] of network) {
+      const { x, y } = node;
+
+      // Check all four cardinal directions
+      const neighbors = [
+        { dx: 0, dy: -1 }, // up
+        { dx: 1, dy: 0 }, // right
+        { dx: 0, dy: 1 }, // down
+        { dx: -1, dy: 0 }, // left
+      ];
+
+      for (const { dx, dy } of neighbors) {
+        const nx = x + dx;
+        const ny = y + dy;
+        const neighborKey = `${nx},${ny}`;
+
+        if (network.has(neighborKey)) {
+          const neighbor = network.get(neighborKey);
+
+          // Determine flow direction based on junction connections
+          // If current pixel is a junction, it receives flow from the neighbor
+          if (node.isJunction && this.isRiverPixel(nx, ny)) {
+            node.upstream.push(neighborKey);
+            neighbor.downstream.push(key);
+          }
+          // If neighbor is a junction, current pixel flows into it
+          else if (neighbor.isJunction && this.isRiverPixel(x, y)) {
+            node.downstream.push(neighborKey);
+            neighbor.upstream.push(key);
+          }
+          // For non-junction connections, we'll determine flow later
+          else if (!node.isJunction && !neighbor.isJunction) {
+            // Temporarily store as bidirectional
+            node.upstream.push(neighborKey);
+            node.downstream.push(neighborKey);
+          }
+        }
+      }
+    }
+
+    // Third pass: resolve flow direction for non-junction segments
+    this.resolveFlowDirections(network);
+
+    return network;
+  }
+
+  resolveFlowDirections(network) {
+    // For river segments between junctions/sources, determine flow direction
+    const visited = new Set();
+
+    // Start from sources and propagate downstream
+    for (const [key, node] of network) {
+      if (node.isSource && !visited.has(key)) {
+        this.propagateFlow(key, network, visited, null);
+      }
+    }
+
+    // Handle any remaining unvisited segments (cycles)
+    for (const [key, node] of network) {
+      if (!visited.has(key) && !node.isJunction) {
+        this.propagateFlow(key, network, visited, null);
+      }
+    }
+  }
+
+  propagateFlow(key, network, visited, fromKey) {
+    if (visited.has(key)) return;
+    visited.add(key);
+
+    const node = network.get(key);
+    if (!node) return;
+
+    // Clear and rebuild connections based on flow direction
+    const allConnections = [...new Set([...node.upstream, ...node.downstream])];
+    node.upstream = [];
+    node.downstream = [];
+
+    if (fromKey) {
+      node.upstream.push(fromKey);
+    }
+
+    // Propagate to all connections except where we came from
+    for (const neighborKey of allConnections) {
+      if (neighborKey !== fromKey) {
+        const neighbor = network.get(neighborKey);
+        if (neighbor && !neighbor.isJunction) {
+          node.downstream.push(neighborKey);
+          this.propagateFlow(neighborKey, network, visited, key);
+        } else if (neighbor && neighbor.isJunction) {
+          // Junction is always downstream
+          node.downstream.push(neighborKey);
+        }
+      }
+    }
+  }
+
+  calculateFlowAccumulation(network) {
+    const flowAccumulation = new Map();
+
+    // Initialize all pixels with flow of 1 (themselves)
+    for (const key of network.keys()) {
+      flowAccumulation.set(key, 1);
+    }
+
+    // Topological sort to process pixels in correct order
+    const sorted = this.topologicalSort(network);
+
+    // Calculate flow accumulation
+    for (const key of sorted) {
+      const node = network.get(key);
+      const currentFlow = flowAccumulation.get(key) || 1;
+
+      // Add current flow to all downstream pixels
+      for (const downstreamKey of node.downstream) {
+        const downstreamFlow = flowAccumulation.get(downstreamKey) || 0;
+        flowAccumulation.set(downstreamKey, downstreamFlow + currentFlow);
+      }
+    }
+
+    return flowAccumulation;
+  }
+
+  topologicalSort(network) {
+    const visited = new Set();
+    const sorted = [];
+
+    const visit = (key) => {
+      if (visited.has(key)) return;
+      visited.add(key);
+
+      const node = network.get(key);
+      if (node) {
+        // Visit all upstream nodes first
+        for (const upstreamKey of node.upstream) {
+          visit(upstreamKey);
+        }
+      }
+
+      sorted.push(key);
+    };
+
+    // Start from sources (nodes with no upstream)
+    for (const [key, node] of network) {
+      if (node.upstream.length === 0) {
+        visit(key);
+      }
+    }
+
+    // Handle any remaining nodes (cycles)
+    for (const key of network.keys()) {
+      visit(key);
+    }
+
+    return sorted;
+  }
+
+  calculateRiverLengths(network) {
+    const lengths = new Map();
+
+    // Calculate length from each source
+    for (const [key, node] of network) {
+      if (node.isSource) {
+        const visited = new Set(); // Fresh visited set for each source
+        this.calculateLengthFromSource(key, network, lengths, visited, 0);
+      }
+    }
+
+    // For any unvisited pixels, assign length 1
+    for (const key of network.keys()) {
+      if (!lengths.has(key)) {
+        lengths.set(key, 1);
+      }
+    }
+
+    return lengths;
+  }
+
+  calculateLengthFromSource(key, network, lengths, visited, currentLength) {
+    if (visited.has(key)) return;
+    visited.add(key);
+
+    const node = network.get(key);
+    if (!node) return;
+
+    // Update length if this path is longer
+    const existingLength = lengths.get(key) || 0;
+    lengths.set(key, Math.max(existingLength, currentLength));
+
+    // Continue downstream
+    for (const downstreamKey of node.downstream) {
+      this.calculateLengthFromSource(
+        downstreamKey,
+        network,
+        lengths,
+        visited,
+        currentLength + 1
+      );
+    }
+  }
+
+  applyRiverWidths(flowAccumulation, riverLengths) {
+    // Find min and max values for normalization
+    let maxFlow = 0;
+    let maxLength = 0;
+
+    for (const flow of flowAccumulation.values()) {
+      maxFlow = Math.max(maxFlow, flow);
+    }
+
+    for (const length of riverLengths.values()) {
+      maxLength = Math.max(maxLength, length);
+    }
+
+    // Apply new blue values based on combined flow and length
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const key = `${x},${y}`;
+
+        if (flowAccumulation.has(key)) {
+          const flow = flowAccumulation.get(key) || 1;
+          const length = riverLengths.get(key) || 1;
+
+          // Combine flow and length (flow is more important)
+          const flowScore = maxFlow > 0 ? flow / maxFlow : 0;
+          const lengthScore = maxLength > 0 ? length / maxLength : 0;
+          const combinedScore = flowScore * 1 + lengthScore * 0.5;
+
+          // Map to blue value (100 for widest, 255 for narrowest)
+          const blueValue = Math.round(255 - (255 - 100) * combinedScore);
+
+          const index = (y * width + x) * 4;
+
+          // Only modify blue channel if this is a river pixel (not source or junction)
+          if (
+            this.imageData.data[index] === 0 && // Not red (junction)
+            this.imageData.data[index + 1] === 0
+          ) {
+            // Not green (source)
+            this.imageData.data[index + 2] = blueValue;
+          }
+        }
+      }
+    }
+
+    // Update canvas
     this.ctx.putImageData(this.imageData, 0, 0);
+    this.render();
   }
 }
 
